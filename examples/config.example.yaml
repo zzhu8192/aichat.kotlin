@@ -1,0 +1,717 @@
+# kotllm configuration -- copy to your config dir as config.yaml
+#
+#   Linux/macOS  ~/.config/kotllm/config.yaml
+#   Windows      %APPDATA%\kotllm\config.yaml
+#   Override     KOTLLM_CONFIG_DIR=/some/dir
+#
+# The format is a simplified subset of aichat's, so an existing aichat
+# config.yaml drops in unchanged. Keys kotllm does not implement are ignored
+# rather than rejected.
+#
+# NEVER commit a real api_key.
+
+# ---- llm ----
+model: my-endpoint-name          # `model`, `client:model`, or an alias below
+
+# Short names for models, so one config can hold several and you do not have
+# to type an endpoint id. Anywhere a model id is accepted takes an alias:
+# `model:` above, `-m`, `/model`, and `llm()` in an agent file.
+#
+# The names are yours and mean nothing to kotllm -- it looks up the string and
+# resolves whatever it finds. Name them after the models:
+#
+#   aliases:
+#     qwen:  databricks-qwen35-122b-a10b
+#     flash: databricks-deepseek-v4-1-flash
+#     gemma: local:gemma4:26b
+#     main:  qwen              # an alias may point at another alias
+#
+# A separate map rather than an `alias:` key per model, because a model does
+# not have to be *declared* to be reachable -- an Ollama client passes
+# undeclared names straight through, so there would be no entry to hang the
+# alias off. An alias that points at nothing, cannot be typed (a colon or a
+# space in the name), or shadows a real client or model name is reported at
+# startup; none of them is a load failure.
+aliases: {}
+temperature: null                # null lets the endpoint decide
+top_p: null
+
+# Cap on output tokens. Leaving this null is deliberate and recommended for
+# reasoning models: a small cap gets consumed by the reasoning block and the
+# reply comes back empty with finish_reason=length. kotllm warns when that
+# happens, but the endpoint default is the safer setting.
+max_tokens: null
+
+# ---- behavior ----
+stream: true                     # stream tokens as they arrive
+save: true                       # persist messages (sessions land in a later increment)
+
+# How much of the model's chain-of-thought to display.
+#   show      print it dimmed, inline before the answer
+#   collapse  a live "thinking (N chars)" status line, then erase it
+#   hide      discard it
+# Reasoning is never sent back to the endpoint in later turns either way.
+reasoning: collapse
+
+# How hard the model is asked to think, sent as OpenAI's `reasoning_effort`.
+# DIFFERENT from `reasoning` above: that one only decides what reaches your
+# screen, and hiding reasoning saves no tokens, no money and no time. This one
+# asks the model not to generate them in the first place.
+#
+#   default   send nothing; the provider's own behaviour applies (the default)
+#   none      ask it not to think at all  (`off` is accepted and means this)
+#   minimal | low | medium | high
+#
+# Supported by Azure/OpenAI reasoning models and passed through by Ollama on
+# /v1. A Databricks-served model may ignore it, and nothing in a reply says
+# whether it was applied -- compare reasoning characters in /status to find
+# out. Settable mid-session with /think.
+# reasoning_effort: default
+
+# ---- appearance ----
+# true  markdown-highlighted output, flushed a line at a time
+# false raw token-by-token passthrough
+highlight: true
+
+# ---- templating ----
+# Two escape mechanisms, both resolved locally before anything is sent.
+#
+# {{name}} interpolates a harness fact: model, endpoint, pwd, uptime, tools,
+# tokens.total, context.percent, shell, os, cmdline, now, and around twenty
+# more. Run /vars to list them with live values. An unknown name is an error
+# with a suggestion; escape a literal as \{{name}}.
+#
+# Variables resolve before <% %>, so a value can be used inside template code:
+#   <%= "{{model}}".toUpperCase %>
+
+# JSP-style client-side templating in your input. Expansion happens locally,
+# before anything is sent: the model receives only the resulting text and never
+# sees the tags.
+#
+#   <% statements %>    Groovy statements, emitting nothing themselves
+#   <%= expression %>   evaluated and interpolated
+#   <%-- comment --%>   dropped
+#   <%%                 a literal <%
+#
+# Example:
+#   <% def fs = Files.walk(Paths.get(".")).filter { it.toString().endsWith(".kt") }.toList() %>
+#   Review these <%= fs.size() %> files:
+#   <% fs.take(3).each { f -> %>
+#   ### <%= f.fileName %>
+#   <%= f.text %>
+#   <% } %>
+#
+# java.nio.file, java.time and groovy.json are star-imported into the session,
+# which is why Files and Paths need no import.
+#
+# Templates share the interpreter session with groovy_eval, so a value computed
+# in a template is visible to later tool calls and vice versa. Input without
+# "<%" in it never starts the compiler.
+#
+# Set false to disable BOTH mechanisms -- {{ }} and <% %> -- for example if you
+# routinely paste JSP/ASP/ERB source and do not want it interpreted.
+template: true
+
+# ---- function-calling / tools ----
+# Master switch. With this off no tools are offered, and the model will
+# correctly tell you it cannot run anything.
+function_calling: true
+
+# Which tools to offer: all, none/null, or a comma-separated list.
+#   groovy_eval compile and run Groovy 5 in a live in-process session. Session
+#               state persists between calls, and everything bundled in the fat
+#               jar is already importable.
+#   exec        run a shell command, through the system shell so pipes work.
+#   remember    append a note to the memory directory.
+use_tools: all
+
+# Withheld from whatever use_tools selected. A subtraction, not a second
+# whitelist: use_tools already expresses "only these", and this expresses the
+# thing it cannot without being rewritten every time the tool set grows --
+# "everything except these".
+#
+# Exact names, or `*` patterns. Accepts a YAML list, a comma-separated string,
+# or a space-separated one.
+#   tools_exclude: "*_eval, exec"        # no code execution, everything else on
+#   tools_exclude: write, edit           # read-only on your tree
+# Withholding the interpreters leaves read_to_var, session_vars and
+# session_transfer behind -- they move values into an interpreter session, so
+# name them too if you want the whole data plane gone.
+#   tools_exclude:
+#     - search_chats
+#     - view_chat
+# An entry matching no tool is reported at startup rather than failing: which
+# tools are registered depends on the rest of this file, so excluding
+# python_eval must not break everything on a machine with no Python. Run
+# `kotllm --list-tools` for the names.
+tools_exclude: []
+
+# groovy_eval and exec are arbitrary code execution on this machine, so the
+# default is to ask first.
+#   confirm  prompt yes / no / all before each call; "all" approves the rest of
+#            the session (default)
+#   auto     never prompt -- fast agentic loops, and no safety net
+#   deny     refuse every call
+# Under confirm with no terminal attached (piped input, single-hit mode) calls
+# are refused rather than silently auto-approved.
+tool_approval: confirm
+
+# Commands never prompted for, as anchored regexes matched against the command
+# line. Anchored deliberately, so allowing git status does not also allow
+# "git status && rm -rf /".
+exec_allowlist:
+  - git (status|diff|log|show)( .*)?
+  - ls( .*)?
+
+# groovy_eval is interrupted after this long. Interruption is cooperative: a
+# tight loop with no blocking call cannot be stopped, though it cannot keep the
+# JVM alive either.
+eval_timeout: 30
+
+# exec kills the command after this long.
+exec_timeout: 120
+
+# Cap on tool round trips within a single user message, so a model stuck in a
+# retry loop cannot spend the whole context window on it.
+max_tool_iterations: 12
+
+# Extra classpath entries for groovy_eval, added at runtime with no rebuild.
+# A trailing star expands to the jars in that directory, and KOTLLM_CLASSPATH
+# is merged in as well.
+classpath_append: []
+#  - d:/libs/mylib.jar
+#  - d:/libs/*
+
+# ---- context compaction ----
+# Keeps a long conversation inside the model window. Two mechanisms, cheapest
+# first: old tool results are trimmed (no request at all), then older exchanges
+# are summarised into one recap message by a side call, with recent exchanges
+# kept verbatim.
+#
+# Checked against the PROJECTED size of the request about to be sent, so it is
+# never a turn late.
+compact_enabled: true
+
+# Trigger, as a share of the model window. Not 95: the compaction request
+# itself sends the history and needs room for the summary, so waiting until
+# nearly full means being unable to afford the call that would fix it. 70 is
+# also deliberately below a chat-only default, because one tool result can add
+# thousands of tokens between checks.
+compact_threshold_percent: 70
+
+# aichat-compatible absolute trigger, in tokens. The only trigger available
+# when a model declares no max_input_tokens.
+compress_threshold: null
+
+# Exchanges kept verbatim. The summary gives the model history; these give it
+# state, and without state it cannot continue mid-task.
+compact_keep_recent: 3
+
+# Below this much older history, summarising is not worth a request.
+compact_min_head: 2
+
+# Old tool results are truncated to this. Usually the single biggest win, and
+# it costs no request. Recent results are never touched, since the model may
+# still be reasoning about them.
+compact_trim_tool_results: true
+compact_tool_result_max_chars: 2000
+
+# Hard cap on the recap. Without one a summary can be LARGER than the text it
+# replaced, which makes compaction actively harmful; kotllm also rejects any
+# compaction that fails to shrink the context.
+compact_summary_max_chars: 2000
+
+# aichat-compatible prompt overrides. summarize_prompt instructs the side call;
+# summary_prompt prefixes the recap when it re-enters the conversation.
+# summarize_prompt: Summarise the conversation below ...
+# summary_prompt: "This is a summary of the earlier conversation, as a recap: "
+
+# ---- memory ----
+# Durable markdown notes injected into the system prompt every turn, framed as
+# background rather than instruction so a stale note cannot override what you
+# are asking for now.
+#
+# Two scopes, both plain files you can edit or grep without kotllm:
+#   global   every *.md in <config dir>/memory/ -- where the `remember` tool
+#            and `/memory add` write
+#   project  KOTLLM.md found in the working directory or any ancestor
+#
+# Global first, then project, nearest last: later text wins when two notes
+# disagree, so the most specific file has the final word. Re-read every turn,
+# so editing a file in another window takes effect on the next message.
+memory_enabled: true
+memory_max_chars: 8000            # over budget files are named, never silently dropped
+memory_project_file: KOTLLM.md
+
+# ---- input ----
+# Caps for -f / /file, which can otherwise spend a whole context window in one
+# keystroke. Hitting one is always reported, and says which.
+input_max_file_chars: 100000      # per file, truncated with a note
+input_max_total_chars: 400000     # across everything in one invocation
+input_max_files: 200              # when walking a directory
+
+# Convert formats that cannot be read as text. aichat-compatible: $1 is the
+# input file, stdout is the result.
+# Images. `-f shot.png` attaches the file as an `image_url` content part
+# rather than pasting it into the prompt, so it never reaches the token
+# estimator. Requires `supports_vision: true` on the model entry -- kotllm
+# skips images with a message naming that key rather than letting the endpoint
+# refuse a megabyte of base64. png, jpg, jpeg, webp and gif.
+input_max_image_bytes: 5000000    # per image, before base64 inflates it by a third
+
+# HTML to markdown, on the way in. A documentation page is 80-95% markup, and
+# this is the single largest avoidable token cost in the input path -- 47k
+# characters became 11k on the Groovy language documentation. Applies to fetched
+# URLs, local .html files, and the `fetch` tool. Set false to send the markup
+# itself, or add a `document_loaders` entry for html to convert it your own way.
+html_to_markdown: true
+
+document_loaders: {}
+#  pdf: pdftotext $1 -
+#  docx: pandoc --to plain $1
+
+# ---- rag (retrieval over a folder) ----
+# Index a folder with `/rag index <folder>`, then the model can call the
+# `search` tool to look things up in it, citing `path:startLine-endLine`.
+# Incremental: only new and edited files are re-read on a later run.
+rag_enabled: true
+
+# How text is split. `auto` picks per file: prose and markdown get overlapping
+# character windows, source code is split on declaration boundaries instead, so
+# a function is not cut in half.
+#   auto      per-file choice (default)
+#   faq       256 tokens / 40 overlap   -- short self-contained entries
+#   docs      512 / 80                  -- standard documentation
+#   longform  1024 / 150                -- books, specs, long reports
+#   code      400 / 0                   -- declaration blocks, no overlap
+rag_profile: auto
+
+# Override the profile's sizes. Tokens, not characters; kotllm converts using
+# the ratios below. Overlap of 10-20% of the chunk size is the usual advice:
+# it stops an answer that straddles a boundary from being lost by both chunks.
+# rag_chunk_size: 512
+# rag_chunk_overlap: 80
+
+# How many passages the `search` tool returns per call.
+rag_top_k: 8
+
+# How many passages one file may contribute to the head of the results. BM25
+# ranks chunks, not files, so a large file that mentions a term in every chunk
+# otherwise floods the result set and buries the file you actually named.
+# A cap on position, not a filter: held-back passages are appended in score
+# order, so this never returns fewer results. 0 disables it.
+rag_max_per_file: 3
+
+# Size of the automatic injection block, when it is on.
+#
+# These keys size it; they do NOT enable it. Injection is turned on only by
+# `/rag inject on`, and only for the current session -- it cannot be enabled
+# from config or from anything on disk. Passages that ride on *every* request
+# spend context nobody asked for, so that is not a decision a config file gets
+# to make once and forget. Kept much smaller than rag_top_k for the same
+# reason.
+rag_inject_top_k: 4
+rag_inject_max_chars: 8000
+
+# BM25 tuning. k1 is term-frequency saturation, b is length normalisation
+# (0 = ignore document length, 1 = fully normalise). The defaults are the
+# standard ones and are rarely worth changing.
+rag_bm25_k1: 1.2
+rag_bm25_b: 0.75
+
+# Reciprocal-rank-fusion constant. Merges the BM25 and dense rankings using
+# position only, never scores -- a BM25 score of 5.4 and a cosine of 0.31 share
+# no scale, and any normalisation between them would be invented. Lower values
+# weight the very top ranks more heavily. 60 is the value from the RRF paper.
+rag_rrf_k: 60
+
+# Per-file ceiling while indexing. A generated or minified file past this is
+# truncated rather than allowed to dominate the index.
+rag_max_file_chars: 400000
+
+# Extensions to index beyond the built-in set. Formats that are not text at all
+# (pdf, docx, jar, class, zip, exe, ...) are refused by name unless a
+# document_loaders entry above can convert them.
+rag_extra_extensions: []
+#  - tf
+#  - proto
+
+# Characters per token, used to turn the token sizes above into character
+# windows. Code is denser than prose, hence two ratios.
+rag_chars_per_token_prose: 4.0
+rag_chars_per_token_code: 3.0
+
+# ---- rag: dense retrieval ----
+# The second half of hybrid search. Character n-grams hashed into a fixed
+# number of buckets, cosine-compared, and fused with BM25 by reciprocal rank.
+#
+# Entirely local: no model file, no service call, no API key, no dependency.
+# It is not semantic -- it will not connect `car` to `automobile` -- but it
+# matches what exact-token BM25 structurally cannot:
+#   compaction  -> Compactor        (morphology, no stemmer needed)
+#   tokenise    -> tokenizer
+#   ToolCall    -> declineToolCalls (fragments and substrings)
+#   declineToolCals -> the real thing (typos)
+#
+#   hashing  local character n-gram encoder (default)
+#   none     BM25 only; no vectors are built and any sidecar is removed
+rag_embedding: hashing
+
+# Bucket count, and therefore vector size: one vector costs dims * 4 bytes, so
+# 2048 is 8KB per chunk. Measured over this repository, the margin between
+# wanted matches and gibberish was +0.056 at 512, +0.067 at 2048 and +0.047 at
+# 8192 -- raising it sixteenfold does not separate them, because the overlap is
+# real shared character n-grams rather than hash collisions. 2048 wins on
+# margin at a quarter of the disk of 8192.
+rag_embedding_dims: 2048
+
+# Cosine floor for a dense hit to count at all.
+#
+# This is what lets retrieval say "nothing matched". Cosine between any two
+# real texts is essentially never zero, so without a floor the dense half
+# returns its nearest neighbours for a query of pure gibberish and fusion then
+# hands them confident ranks. Measured here, nonsense peaks at 0.17 and wanted
+# matches bottom out at 0.24, so 0.20 sits between them -- with a margin of
+# only about 0.07, which is why it is a knob and not a constant.
+#
+# Raise it to cut weak matches, lower it for more recall on typos. It fails
+# safe either way: BM25 still answers on its own.
+rag_min_similarity: 0.20
+
+# Character n-gram lengths. Shorter catches more morphology and more noise;
+# longer is stricter and misses short variants.
+rag_char_ngram_min: 3
+rag_char_ngram_max: 5
+
+# ---- web search and fetch ----
+#
+# Both tools are keyless: no account, no API key, nothing to sign up for.
+# That comes at a cost, and the two halves differ in exactly how reliable
+# they are.
+#
+#   The four named sources are documented JSON APIs and will keep working:
+#     stackoverflow  api.stackexchange.com, 300 requests/day unauthenticated
+#     wikipedia      the MediaWiki search API
+#     maven          coordinates go to repo1.maven.org, keywords to the index
+#     github         repository search; a GITHUB_TOKEN in the environment is
+#                    used if present, only to raise the rate limit
+#
+#   General web search is **scraped HTML** from DuckDuckGo. It works today, it
+#   will break when their markup changes, and automated use is against their
+#   terms. It is therefore opt-in: without `provider`, the model can still use
+#   the four sources above but not an open-ended web query. That default is
+#   deliberate -- a general search is the model inventing a query and sending
+#   it somewhere, and read-only tools do not stop to ask.
+#
+# web_search:
+#   provider: ddg-lite        # none (default) | ddg-lite | ddg-html | searxng
+#   api_base: null            # searxng instance, ignored by the others
+#   results: 5
+#   timeout: 15
+#   stack_site: stackoverflow # any Stack Exchange site
+#   enabled: true             # false withdraws the tool entirely
+#   sites:                    # domains you treat as authoritative. Named in the
+#     - groovy-lang.org      # tool description so the model knows what is
+#     - docs.databricks.com   # worth a site: filter. Not enforced as a filter.
+#
+# Behind a TLS-inspecting corporate proxy, kotllm trusts the Windows
+# certificate store as well as the JDK's, because the proxy re-signs traffic
+# with a private CA that the JVM alone does not know. On other platforms point
+# KOTLLM_TRUSTSTORE at the CA bundle (.pem or .jks).
+
+# ---- networking ----
+connect_timeout: 15              # seconds
+# Databricks endpoints scale to zero and answer 503 while a model is being
+# scheduled. Transient statuses (408/429/5xx) are retried with backoff.
+max_retries: 3
+
+# ---- throttling ----
+# Client-side rate limiting over a rolling window, so hitting a provider limit
+# becomes a visible pause instead of a 429 that wasted a round trip (and, on a
+# long conversation, re-sent a large prompt to find out).
+#
+# kotllm cannot discover these numbers -- set them to whatever your provider
+# publishes for the endpoint. Any subset may be left null. A bare integer is
+# shorthand for input tokens per minute:
+#
+#   rate_limit: 1000000
+#
+rate_limit:
+  # Checked BEFORE sending, from an estimate: the true prompt_tokens count only
+  # comes back with the response, so kotllm estimates, then corrects the window
+  # once the real number arrives. The estimator calibrates itself against
+  # observed usage; see `estimator` in /status.
+  input_tokens_per_minute: null
+
+  # Output cannot be predicted, only counted after the fact, so these two
+  # throttle the NEXT request rather than the current one. Set total_ if your
+  # provider meters prompt+completion against one budget.
+  output_tokens_per_minute: null
+  total_tokens_per_minute: null
+
+  # Request-rate limiting. Databricks AI Gateway has historically expressed
+  # limits as queries per minute, so this may be the only one you need.
+  requests_per_minute: null
+
+  # Window length. Limits are quoted per minute and scaled pro rata, so
+  # window_seconds: 30 with 1000000 input means 500000 per 30s.
+  window_seconds: 60
+
+  # wait  sleep until capacity frees up, showing a countdown (default)
+  # error fail immediately -- for scripts where stalling is worse than failing
+  on_limit: wait
+
+# ---- cost ----
+# Session spend: dollars and DBUs in `/status`, one line in `/info`.
+#
+# EVERY FIGURE IS AN ESTIMATE, AND ALWAYS AN UPPER BOUND ON INPUT. The reason
+# dwarfs the arithmetic: the gateway's `usage` block reports prompt_tokens and
+# completion_tokens and says nothing at all about cache hits, so a prompt served
+# from cache is charged here at full rate. The real bill is lower by an amount
+# kotllm cannot see.
+pricing_enabled: true
+
+# USD per DBU-hour, for the Databricks half of the table. $0.07 is the published
+# list rate for Mosaic AI model serving in a base region. A workspace on a
+# negotiated rate changes this one number rather than every entry below.
+#
+# DBUs are the software charge only. Cloud compute underneath is separate and
+# invisible to kotllm -- negligible for serverless pay-per-token serving, which
+# is what the shipped rates cover.
+dbu_rate: 0.07
+
+# kotllm ships a default price list covering the Databricks Foundation Model
+# APIs and a handful of Azure models (pricing.yaml, inside the jar). `/status`
+# names the DBU rate in force and the date the shipped table was verified, and
+# reports any model that matched nothing as `unpriced`.
+#
+# This block LAYERS ON TOP of that list; it does not replace it. A key that
+# exactly matches a bundled one overrides it, anything else is added. Leaving
+# the block out entirely is the normal case.
+#
+# LOOKUP matches a key's dash-separated segments as an ordered subsequence of
+# the model id, so one entry covers a family:
+#
+#   databricks-qwen35-122b        covers  databricks-qwen35-122b-a10b
+#   databricks-deepseek-v4-flash  covers  databricks-deepseek-v4-1-flash
+#
+# and stays strict where it matters: gpt-oss-20b does NOT match gpt-oss-120b,
+# because segments compare whole. The most specific match wins, so a precise key
+# always beats a general one. A model matching nothing is reported as `unpriced`
+# and named, never silently costed at zero.
+#
+# The entries below are commented out on purpose. Uncommenting one SHADOWS the
+# shipped figure for that model, which is what you want when your rate is
+# negotiated and not what you want by accident.
+#pricing:
+#
+#  # Databricks publishes DBU per 1,000,000 tokens rather than dollars, so that
+#  # is what goes here and `dbu_rate` converts it.
+#  dbu_per_million:
+#    databricks-qwen35-122b:       { input: 3.143,  output: 31.429 }
+#    databricks-glm-5-3-flash:     { input: 2.143,  output: 7.143 }
+#    databricks-deepseek-v4-pro:   { input: 18.857, output: 56.571 }
+#    databricks-kimi-k3:           { input: 42.857, output: 214.286 }
+#
+#    # An embedding endpoint generates nothing, so `output` may be omitted and
+#    # defaults to 0. A missing `input`, by contrast, drops the entry: a
+#    # half-written price is worse than none.
+#    databricks-gte-large-en:      { input: 1.857 }
+#
+#  # Anything billed in dollars per 1,000,000 tokens, Azure included.
+#  #
+#  # TWO AZURE GOTCHAS, both of which end in `unpriced`:
+#  #
+#  #   1. The key must match your DEPLOYMENT name, not the underlying model.
+#  #      Azure deployment routes put `model` straight into the URL, and that
+#  #      same string is what gets priced. Name a deployment `prod-chat` and no
+#  #      key will ever match it -- so either name deployments after the model,
+#  #      or add an entry under the name you chose.
+#  #   2. Azure does not publish machine-readable per-token prices. Its Foundry
+#  #      and OpenAI pages render every figure as "$-" and point at the
+#  #      calculator, so the shipped Azure entries are only the widely attested
+#  #      ones. Check your own calculator and add what you actually run.
+#  usd_per_million:
+#    gpt-4.1:                      { input: 2.00,  output: 8.00 }
+#    gpt-4.1-mini:                 { input: 0.40,  output: 1.60 }
+#    gpt-4o:                       { input: 2.50,  output: 10.00 }
+#
+#    # A deployment named after your workload rather than the model. This is the
+#    # entry most Azure users actually need.
+#    prod-chat:                    { input: 2.00,  output: 8.00 }
+#
+#    # A self-hosted or on-prem endpoint billed per token by someone else.
+#    my-vendor-model:              { input: 0.50,  output: 1.50 }
+#
+#    # A local server that is NOT Ollama. Free turns are inferred from the
+#    # provider, and only `type: ollama` (or an Ollama-looking api_base) counts;
+#    # vLLM, llama.cpp and LM Studio behind `openai-compatible` are reported as
+#    # `unpriced` instead. A zero entry is how you tell kotllm they cost nothing.
+#    my-vllm-model:                { input: 0.0,   output: 0.0 }
+
+# ---- clients ----
+clients:
+
+  # Databricks AI Gateway. The collection route below is correct as written:
+  # kotllm posts to {api_base}/chat/completions with `model` in the body, so no
+  # per-endpoint /invocations URL is needed.
+  - type: openai-compatible
+    name: my-endpoint-name
+    api_base: https://<workspace>.azuredatabricks.net/serving-endpoints
+    api_key: dapi...
+    models:
+      - name: my-endpoint-name
+        max_input_tokens: 261000
+        supports_vision: false
+        supports_function_calling: true
+    # A per-client block overrides the global one. This is usually what you
+    # want once more than one endpoint is configured, since a limit belongs to
+    # an endpoint or workspace rather than to kotllm as a whole.
+    # rate_limit:
+    #   input_tokens_per_minute: 1000000
+
+  # Ollama. Reached over its OpenAI-compatible /v1 surface, not its own API --
+  # so there is no separate transport and everything below is the same client
+  # the gateway above uses.
+  #
+  # api_base is optional: it defaults to http://localhost:11434/v1, and a bare
+  # host (http://localhost:11434) has /v1 appended for you, since that is the
+  # form Ollama's own documentation shows. No api_key is needed; set one only
+  # if a reverse proxy in front of it wants a Bearer token. `type: ollama` is
+  # also inferred from port 11434 on any host, so a remote GPU box needs
+  # nothing special.
+  #
+  # Model names contain a colon (qwen3:27b), which is handled: the
+  # `client:model` form is only recognised when the part before the colon
+  # really names a client.
+  #
+  # SET max_input_tokens, and set the server to match. Ollama runs every model
+  # at its own configured window regardless of what the model supports, and a
+  # longer prompt is truncated SILENTLY -- no error, nothing in usage. kotllm
+  # drives compaction and the context gauge from this number, so if it is
+  # unset kotllm says so once at startup. Match it with
+  # OLLAMA_CONTEXT_LENGTH=32768 on the server, or PARAMETER num_ctx in a
+  # Modelfile. kotllm deliberately does not send num_ctx itself: it allocates
+  # GPU memory, which is not a chat client's decision to make per request.
+  #
+  # Turns on a local endpoint are costed as free rather than reported as
+  # `unpriced`, and `/model discover` or `--list-models --discover` asks the
+  # server what it currently has, so `ollama pull` needs no edit here.
+  # - type: ollama
+  #   name: local
+  #   # api_base: http://localhost:11434    # optional; /v1 appended if absent
+  #   models:
+  #     - name: qwen3:27b
+  #       max_input_tokens: 32768
+  #       supports_function_calling: true   # varies by model
+  #       supports_vision: false
+
+  # Any other OpenAI-compatible server (vLLM, llama.cpp, LM Studio, LocalAI).
+  # - type: openai-compatible
+  #   name: local
+  #   api_base: http://localhost:8000/v1
+  #   models:
+  #     - name: qwen3
+  #       max_input_tokens: 131072
+
+  # Azure AI Foundry / Azure OpenAI endpoints.
+  # Inferred automatically from api_base host (services.ai.azure.com, openai.azure.com),
+  # or declared explicitly with type: azure-foundry / azure-openai.
+  # - type: openai-compatible          # or azure-foundry
+  #   name: gpt-5.6-luna
+  #   api_base: https://<resource>.services.ai.azure.com
+  #   api_key: xxx
+  #   api_version: 2024-12-01-preview  # optional; appends ?api-version=... when given
+  #   models:
+  #     - name: gpt-5.6-luna
+  #       max_input_tokens: 512000
+  #       supports_function_calling: true
+
+
+# Groovy tools you write yourself, evaluated from <config dir>/tools/*.groovy
+# at startup. No build step, no jar and no compiler wait: the file runs in the
+# same session groovy_eval uses, so it gets the same classpath LLM-authored
+# code gets.
+#
+# The contract is one sentence: the file's last expression must be a
+# kotllm.tools.Tool. The constructor is
+# (name, description, parameters, preview, run, readOnly):
+#
+#   def schema = Tool.schema('''{ "type": "object", ... }''')
+#
+#   new Tool("word_count", "Counts words in `text`; unique=true counts " +
+#       "distinct.", schema,
+#       { args -> "count words" },       // preview, shown at the confirm prompt
+#       { args -> new ToolResult(...) },
+#       true)                            // readOnly: skips the confirm prompt
+#
+# Two interop rules, both of which fail at load rather than at edit time:
+# use `Tool.schema(text)` rather than kotlinx's `Json` (Groovy cannot reach its
+# companion), and use `Tool.optStr`/`optBool` rather than `Tool.str(...).fold`
+# (Outcome's combinators are Kotlin extension functions, invisible to Groovy).
+#
+# You write the JSON Schema yourself. Nothing is derived by reflection, which
+# means nothing can be derived wrongly: what you write is exactly what the
+# model is shown. Name the arguments in `description` too -- it is the only
+# prose the model gets. See examples/tools/word_count.groovy.
+#
+# Each file is evaluated separately, so one that fails is reported and skipped
+# rather than taking the others with it.
+#
+# /tools lists what each file produced, /tools reload re-evaluates them.
+# user_tools: true
+
+# ---------------------------------------------------------------------------
+# Tool families that are off by default, purely on cost
+# ---------------------------------------------------------------------------
+#
+# Tool schemas are not part of the system prompt -- they are a sibling field of
+# `messages` on the request -- but the provider serialises them into the
+# model's context and bills them as input all the same. On a default config
+# they were 4,752 tokens against 670 for the prompt: seven times larger, and
+# invisible from inside the REPL until `/prompt full` learnt to weigh them.
+#
+# So the families below are opt-in. Nothing about them is broken and none is
+# deprecated; each is simply dead weight on the many turns that are a question
+# rather than a task. `docs/tools.md` is right that a tool the model is not
+# told about does not get used -- that is the price you are choosing to pay,
+# and it is why the file family, the interpreters and `exec` stay on.
+#
+# Turn one back on and it behaves exactly as it always did.
+
+# create_tasks + update_task: the visible checklist.  ~362 tokens
+# task_tools: false
+
+# add_or_update_memory + delete_memory + read_memory.  ~266 tokens
+# You can still write memories yourself with /memory, which costs nothing
+# per request; this key is only about the model writing them.
+# memory_tools: false
+
+# web_search + fetch.  ~390 tokens
+# web_tools: false
+
+# session_transfer: move a value straight from one interpreter session to
+# another. Needs two sessions to be useful at all.  ~219 tokens
+# session_transfer: false
+
+# java_eval, plus `java` in every `language` enum.  ~249 tokens
+# Off by default since 1.33.0. Not a judgement on JShell -- it is the only
+# session here that can hard-stop `while (true) {}` -- but a Groovy-first tool
+# offering three interpreters charges everyone for what few use.
+# java_eval: false
+
+# ---------------------------------------------------------------------------
+# How much of a tool call reaches the screen
+# ---------------------------------------------------------------------------
+#
+# Display only. The model receives the whole preview and the whole result
+# either way, so these cost no tokens -- they decide whether a conversation
+# stays readable when a tool reads a file.
+#
+# They were hardcoded at 12 and 16 from the first tool harness, which buries
+# the transcript the moment anything calls read_to_context. Both are settable
+# mid-session with /set, which is when you actually discover a result was
+# worth seeing in full. 0 hides that part entirely.
+
+# tool_preview_lines: 3    # the arguments, shown before the call runs
+# tool_output_lines: 6     # what came back

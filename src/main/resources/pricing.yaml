@@ -1,0 +1,104 @@
+# kotllm's default price list.
+#
+# EVERY FIGURE HERE PRODUCES AN ESTIMATE, and there are three separate reasons,
+# all of which matter more than the arithmetic:
+#
+#   1. These are LIST prices. Your workspace or enterprise agreement almost
+#      certainly is not list. `dbu_rate` below is the one knob that fixes the
+#      Databricks half; for Azure, edit the numbers.
+#   2. CACHED INPUT IS INVISIBLE TO US. The gateway's `usage` block reports
+#      prompt_tokens and completion_tokens and nothing about cache hits, so a
+#      cached prompt is charged here at full rate and the real bill is lower.
+#      Every number kotllm shows is therefore an upper bound on input cost.
+#   3. DBUs are the software charge. There is separate cloud compute underneath,
+#      which kotllm cannot see -- reported as negligible for serverless
+#      pay-per-token serving, which is what these rates cover.
+#
+# Override or extend any of this from config.yaml with a `pricing:` block of
+# the same shape; your entries win.
+#
+# LOOKUP matches a key's dash-separated segments as an ordered subsequence of
+# the model id's, so one entry covers the variants:
+#
+#   databricks-qwen35-122b        covers  databricks-qwen35-122b-a10b
+#   databricks-deepseek-v4-flash  covers  databricks-deepseek-v4-1-flash
+#
+# and stays strict where it matters -- gpt-oss-20b does NOT match gpt-oss-120b,
+# and glm-5-2 does NOT match glm-5-3, because segments compare whole. The most
+# specific match wins, so a precise key always beats a general one.
+#
+# A model that matches nothing is reported as `unpriced` rather than as zero.
+# Silently costing an unknown model at nothing would be the worst of the
+# available failure modes.
+
+verified: "2026-09-18"
+
+# USD per DBU-hour. $0.07 is the published list rate for Artificial Intelligence
+# (Mosaic AI) model serving in a base region (us-east-1 / eastus / us-central1),
+# and is the rate this project is costed at. Change it if yours differs.
+# https://www.databricks.com/product/pricing/foundation-model-serving
+dbu_rate: 0.07
+
+# ---------------------------------------------------------------------------
+# Databricks Foundation Model APIs -- DBU per 1,000,000 tokens.
+#
+# Taken from Databricks' own Foundation Model Serving pricing page, which
+# publishes DBU rather than dollars, so this file stores what they publish and
+# converts with `dbu_rate`. Endpoint names follow `databricks-<model>`; where
+# the exact serving name was not certain, both plausible spellings are listed,
+# because a wrong key silently yields `unpriced` and a spare key costs nothing.
+# A point release is costed at its base model's rate -- v4-1-flash at v4-flash --
+# on the assumption that it is priced the same. Better than `unpriced`, and one
+# more reason the figure is labelled an estimate.
+# ---------------------------------------------------------------------------
+dbu_per_million:
+  databricks-kimi-k3:                 { input: 42.857, output: 214.286 }
+  databricks-glm-5-2:                 { input: 20.000, output: 62.857 }
+  databricks-glm-5-3:                 { input: 20.000, output: 62.857 }
+  databricks-glm-5-3-flash:           { input: 2.143,  output: 7.143 }
+  databricks-deepseek-v4-pro:         { input: 18.857, output: 56.571 }
+  databricks-deepseek-v4-flash:       { input: 2.000,  output: 4.000 }
+  databricks-inkling:                 { input: 14.286, output: 57.857 }
+  databricks-kimi-k2-7:               { input: 13.571, output: 57.143 }
+
+  # The model this project is developed against: "Qwen 3.5 122B" on the
+  # pricing page, served as databricks-qwen35-122b-a10b, matched by prefix.
+  databricks-qwen35-122b:             { input: 3.143,  output: 31.429 }
+  databricks-qwen3-5-122b:            { input: 3.143,  output: 31.429 }
+
+  databricks-llama-4-maverick:        { input: 7.143,  output: 21.429 }
+  databricks-llama-3-3-70b:           { input: 7.143,  output: 21.429 }
+  databricks-meta-llama-3-3-70b-instruct: { input: 7.143, output: 21.429 }
+  databricks-qwen3-80b-instruct:      { input: 2.143,  output: 17.143 }
+  databricks-gpt-oss-120b:            { input: 2.143,  output: 8.571 }
+  databricks-gemma-3-12b:             { input: 2.143,  output: 7.143 }
+  databricks-llama-3-1-8b:            { input: 2.143,  output: 6.429 }
+  databricks-meta-llama-3-1-8b-instruct:  { input: 2.143, output: 6.429 }
+  databricks-gpt-oss-20b:             { input: 1.000,  output: 4.286 }
+
+  # Embedding endpoints: input only, no generated tokens.
+  databricks-gte-large-en:            { input: 1.857,  output: 0.0 }
+  databricks-bge-large-en:            { input: 1.429,  output: 0.0 }
+  databricks-qwen3-0-6b-embedding:    { input: 0.286,  output: 0.0 }
+
+# ---------------------------------------------------------------------------
+# Priced directly in USD per 1,000,000 tokens.
+#
+# Deliberately short, and the reason is worth recording: **Azure's own pricing
+# pages do not publish machine-readable figures.** Both the Foundry Models and
+# Azure OpenAI pages render every price as "$-" and direct you to the calculator
+# or to sales, and the current lineup (GPT-5.4/5.5/5.6, with GPT-6 "in
+# processing") has no published per-token table to copy. The entries below are
+# the ones that are widely and consistently attested; anything you actually run
+# on Azure should be checked against your own calculator and added here.
+#
+# https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/microsoft/
+# ---------------------------------------------------------------------------
+usd_per_million:
+  gpt-4o:         { input: 2.50, output: 10.00 }
+  gpt-4o-mini:    { input: 0.15, output: 0.60 }
+  gpt-4.1:        { input: 2.00, output: 8.00 }
+  gpt-4.1-mini:   { input: 0.40, output: 1.60 }
+  gpt-4.1-nano:   { input: 0.10, output: 0.40 }
+  phi-4:          { input: 0.125, output: 0.50 }
+  phi-4-mini:     { input: 0.07, output: 0.23 }

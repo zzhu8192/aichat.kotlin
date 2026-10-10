@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>kotllm</groupId>
+    <artifactId>kotllm</artifactId>
+    <!-- Bumped on every change worth telling apart, so a screenshot, a bug
+         report or a running binary can be tied to one build. BuildInfo.full
+         appends the build timestamp for the several builds that share one
+         -SNAPSHOT. -->
+    <version>1.36.2-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Resource filtering cannot expand ${maven.build.timestamp} directly;
+             it has to be bounced through a property of our own. -->
+        <maven.build.timestamp.format>yyyy-MM-dd HH:mm:ss'Z'</maven.build.timestamp.format>
+        <build.timestamp>${maven.build.timestamp}</build.timestamp>
+        <maven.compiler.release>17</maven.compiler.release>
+
+        <kotlin.version>2.4.20</kotlin.version>
+        <kotlin.compiler.jvmTarget>17</kotlin.compiler.jvmTarget>
+        <!-- The port's whole premise is that this is faster than scalac.
+             Measured, not assumed: the Scala tree is 31s main + 29s test. -->
+        <kotlin.compiler.incremental>true</kotlin.compiler.incremental>
+
+        <kotlinx-serialization.version>1.11.0</kotlinx-serialization.version>
+        <groovy.version>5.1.3</groovy.version>
+
+        <jline.version>4.4.5</jline.version>
+        <snakeyaml.version>2.7</snakeyaml.version>
+        <junit.version>6.1.3</junit.version>
+        <kotest.version>6.2.5</kotest.version>
+        <coroutines.version>1.11.0</coroutines.version>
+        <surefire.version>3.6.0</surefire.version>
+        <shade.version>3.6.2</shade.version>
+        <dependency.plugin.version>3.11.0</dependency.plugin.version>
+
+        <main.class>kotllm.MainKt</main.class>
+
+        <!-- Tests that hit a live endpoint carry @Tag("Live") and are out of
+             the default run. `mvn -Plive test` puts them back. -->
+        <excluded.test.tags>Live</excluded.test.tags>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-stdlib</artifactId>
+            <version>${kotlin.version}</version>
+        </dependency>
+
+        <!-- Replaces ujson: 584 call sites in the Scala tree ride on this. -->
+        <dependency>
+            <groupId>org.jetbrains.kotlinx</groupId>
+            <artifactId>kotlinx-serialization-json</artifactId>
+            <version>${kotlinx-serialization.version}</version>
+        </dependency>
+
+        <!-- The interpreter behind `groovy_eval`. Groovy rather than Kotlin
+             scripting: both are in-process and both bind live objects, which
+             `TemplateEngine` and `FileSink` require, but kotlin-scripting drags
+             in kotlin-compiler-embeddable at 56MB and this is about 10MB. -->
+        <dependency>
+            <groupId>org.apache.groovy</groupId>
+            <artifactId>groovy</artifactId>
+            <version>${groovy.version}</version>
+        </dependency>
+        <!-- Separate module, and not optional: the session preamble imports
+             `groovy.json`, and `bindJson` uses JsonSlurper to hand the model a
+             native Map rather than a kotlinx JsonElement whose accessors are
+             Kotlin extensions Groovy cannot see. -->
+        <dependency>
+            <groupId>org.apache.groovy</groupId>
+            <artifactId>groovy-json</artifactId>
+            <version>${groovy.version}</version>
+        </dependency>
+
+        <!-- Deliberately the JLine *uber* jar, with the jdk11 classifier that
+             replaced 3.x's jdk8. Declaring the modular jline-terminal /
+             jline-reader artifacts instead duplicates every org.jline class in
+             the shaded jar at a skewed version; the uber jar is one coordinate
+             and one copy. The classified build is a plain jar where the
+             unclassified one is multi-release, and shading a multi-release jar
+             means reasoning about which META-INF/versions entries survive the
+             module-info filter below.
+
+             Two behaviour changes had to be absorbed to get to 4.x, both of
+             which compiled silently: `ParsedLine` no longer reports a phantom
+             empty word when the cursor sits after a trailing space, and the
+             eleven light box-drawing characters are now rewritten to ASCII
+             unconditionally rather than left alone. See `Completer.complete`
+             and `Glyphs.dividerChar`. -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline</artifactId>
+            <version>${jline.version}</version>
+            <classifier>jdk11</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${snakeyaml.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-test-junit5</artifactId>
+            <version>${kotlin.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Assertions only, not the Kotest runner. `shouldBe` is a drop-in
+             for ScalaTest's `shouldBe`, which is what makes 1,300 existing
+             assertions portable rather than rewritable.
+
+             The two exclusions are not tidying. Kotest declares them at
+             `runtime` scope, and Maven keeps a runtime-scoped transitive of a
+             test-scoped dependency on the runtime classpath, so a test-only
+             assertion library was putting 3.4MB of coroutines and a
+             kotlin-reflect pinned to 1.9.23 into the shipped jar. Nothing in
+             the product needs either now that the interpreter is Groovy, so
+             they are excluded and re-declared below at test scope. -->
+        <dependency>
+            <groupId>io.kotest</groupId>
+            <artifactId>kotest-assertions-core-jvm</artifactId>
+            <version>${kotest.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-reflect</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlinx</groupId>
+                    <artifactId>kotlinx-coroutines-core-jvm</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-reflect</artifactId>
+            <version>${kotlin.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlinx</groupId>
+            <artifactId>kotlinx-coroutines-core-jvm</artifactId>
+            <version>${coroutines.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>kotllm</finalName>
+
+        <sourceDirectory>src/main/kotlin</sourceDirectory>
+        <testSourceDirectory>src/test/kotlin</testSourceDirectory>
+
+        <!-- Only the build stamp is filtered. Filtering the whole directory
+             would also rewrite any binary or template resource added later,
+             which fails silently and confusingly. chat.md is a `<% %>`
+             template full of things Maven would try to expand. -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>kotllm-build.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>kotllm-build.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
+
+        <plugins>
+            <plugin>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-maven-plugin</artifactId>
+                <version>${kotlin.version}</version>
+                <executions>
+                    <execution>
+                        <id>compile</id>
+                        <phase>compile</phase>
+                        <goals><goal>compile</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>test-compile</id>
+                        <phase>test-compile</phase>
+                        <goals><goal>test-compile</goal></goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <jvmTarget>17</jvmTarget>
+                    <args>
+                        <!-- The Scala build runs -deprecation -feature; this is
+                             the closest equivalent worth having early, while the
+                             port is still setting its conventions. -->
+                        <arg>-Xjsr305=strict</arg>
+                    </args>
+                    <compilerPlugins>
+                        <plugin>kotlinx-serialization</plugin>
+                    </compilerPlugins>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.jetbrains.kotlin</groupId>
+                        <artifactId>kotlin-maven-serialization</artifactId>
+                        <version>${kotlin.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+
+            <!-- Writes the runtime dependency list into the jar. `Manifest`
+                 reads it to build the library list the system prompt shows the
+                 model, and it fails soft to an empty list. Without this the
+                 model is told the classpath is bare, on every turn, with
+                 nothing reporting that anything is wrong. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${dependency.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>emit-dependency-manifest</id>
+                        <phase>process-resources</phase>
+                        <goals><goal>list</goal></goals>
+                        <configuration>
+                            <includeScope>runtime</includeScope>
+                            <outputFile>${project.build.outputDirectory}/kotllm-dependencies.txt</outputFile>
+                            <outputAbsoluteArtifactFilename>false</outputAbsoluteArtifactFilename>
+                            <sort>true</sort>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>${shade.version}</version>
+                <executions>
+                    <execution>
+                        <id>shade-jar-with-dependencies</id>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <!-- Replace the thin jar rather than attaching a classifier:
+                         the fat jar's own classpath is what IMain compiles
+                         against, so it is the only artifact that works. -->
+                    <shadedArtifactAttached>false</shadedArtifactAttached>
+                    <createDependencyReducedPom>false</createDependencyReducedPom>
+                    <transformers>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <mainClass>${main.class}</mainClass>
+                        </transformer>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                            <resource>reference.conf</resource>
+                        </transformer>
+                    </transformers>
+                    <filters>
+                        <filter>
+                            <artifact>*:*</artifact>
+                            <excludes>
+                                <exclude>META-INF/*.SF</exclude>
+                                <exclude>META-INF/*.DSA</exclude>
+                                <exclude>META-INF/*.RSA</exclude>
+                                <!-- Every jar has one and the transformer writes
+                                     the real one; without this the overlap
+                                     warning lists all twenty and buries any
+                                     overlap that would actually matter. -->
+                                <exclude>META-INF/MANIFEST.MF</exclude>
+                                <exclude>module-info.class</exclude>
+                                <exclude>META-INF/versions/*/module-info.class</exclude>
+                            </excludes>
+                        </filter>
+                    </filters>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire.version}</version>
+                <configuration>
+                    <excludedGroups>${excluded.test.tags}</excludedGroups>
+                    <!-- Sized deliberately. Left to itself the fork takes a
+                         fraction of total RAM and collides with the Kotlin
+                         build daemon, dying on a native allocation, which
+                         surfaces as a truncated suite rather than a failure.
+                         Too small and it dies on Java heap instead: the suite
+                         retains roughly 200MB per 15 seconds of testing,
+                         measured, because every Runner under test starts a
+                         Kotlin compiler session and none are released. 3g runs
+                         out around test 800.
+
+                         `forkCount=0` was tried and reverted: it runs all 1219
+                         tests in one JVM, which makes the retention obvious,
+                         but 111 of them then fail on shared global state. -->
+                    <argLine>-Xmx4608m</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>live</id>
+            <properties>
+                <excluded.test.tags/>
+            </properties>
+        </profile>
+    </profiles>
+</project>

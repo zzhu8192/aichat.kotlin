@@ -1,0 +1,20 @@
+target/
+*.class
+.idea/
+*.iml
+.vscode/
+dependency-reduced-pom.xml
+*.log
+
+# Local run config: contains live credentials, must never be committed.
+# ROOT-ANCHORED, and it matters: a bare `config/` has no leading slash, so git
+# matches a directory of that name at ANY depth -- which silently ignored the
+# whole `src/main/scala/kotllm/config` source package. Files already tracked
+# kept working, so the only symptom was a new file in that package vanishing
+# from `git add` without a word. SessionStore.scala nearly shipped that way.
+/config/
+history.txt
+
+# The Python session's virtual environment, created on first use of
+# python_eval. Tens to hundreds of MB, and entirely reproducible.
+pyenv/
