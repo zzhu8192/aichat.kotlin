@@ -74,6 +74,7 @@ class Repl(
             reader.setOpt(LineReader.Option.AUTO_LIST)
             reader.setOpt(LineReader.Option.AUTO_MENU)
             reader.setOpt(LineReader.Option.AUTO_MENU_LIST)
+            reader.setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION)
             MenuKeys.styleMenu(reader)
             MenuKeys.bindArrows(reader)
             MenuKeys.bindOpenOnArrow(reader)

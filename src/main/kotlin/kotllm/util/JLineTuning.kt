@@ -36,6 +36,12 @@ object JLineTuning {
         if (System.getProperty(DisableAlternateCharset) == null) {
             System.setProperty(DisableAlternateCharset, "true")
         }
+        // Silence JLine's JUL logger so internal diagnostics (like history expansion
+        // or parser warnings) never leak onto the terminal stderr while typing or redrawing.
+        try {
+            java.util.logging.Logger.getLogger("org.jline").level = java.util.logging.Level.OFF
+        } catch (_: Throwable) {
+        }
     }
 
     /**
@@ -43,4 +49,7 @@ object JLineTuning {
      */
     val alternateCharsetDisabled: Boolean
         get() = System.getProperty(DisableAlternateCharset) == "true"
+
+    val jlineLoggingSilenced: Boolean
+        get() = java.util.logging.Logger.getLogger("org.jline").level == java.util.logging.Level.OFF
 }

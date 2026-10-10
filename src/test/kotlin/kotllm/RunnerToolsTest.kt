@@ -243,7 +243,8 @@ class RunnerToolsTest {
         // Each is off purely on cost, and each is one config key away. The test
         // exists because the cheapest way to undo 1,200 tokens of saving is to
         // register something unconditionally again.
-        val names = runner(enabled).activeTools.map { it.name }
+        val r = runner(enabled)
+        val names = r.activeTools.map { it.name }
         names.none {
             it in setOf(
                 "create_tasks", "update_task", "add_or_update_memory", "delete_memory",
@@ -251,8 +252,10 @@ class RunnerToolsTest {
             )
         } shouldBe true
         // And the ones that earn their place are still there.
-        names.containsAll(
-            listOf("groovy_eval", "python_eval", "read_to_var", "write_from_eval", "grep", "edit", "exec")
-        ) shouldBe true
+        val expected = buildList {
+            addAll(listOf("groovy_eval", "read_to_var", "write_from_eval", "grep", "edit", "exec"))
+            if (r.pythonEngine != null) add("python_eval")
+        }
+        names.containsAll(expected) shouldBe true
     }
 }

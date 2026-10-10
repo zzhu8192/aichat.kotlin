@@ -28,9 +28,25 @@ data class PythonConfig(
     val timeoutSeconds: Int
 ) {
     companion object {
+        fun defaultLauncher(): String {
+            val path = System.getenv("PATH") ?: return "python"
+            val sep = java.io.File.pathSeparator
+            val isWin = System.getProperty("os.name", "").lowercase().contains("win")
+            val candidates = if (isWin) listOf("python.exe", "python3.exe", "python", "python3") else listOf("python", "python3")
+            for (candidate in candidates) {
+                for (dir in path.split(sep)) {
+                    val f = java.io.File(dir, candidate)
+                    if (f.isFile && (isWin || f.canExecute())) {
+                        return if (isWin) candidate.removeSuffix(".exe") else candidate
+                    }
+                }
+            }
+            return "python"
+        }
+
         val default: PythonConfig = PythonConfig(
             enabled = true,
-            launcher = "python",
+            launcher = defaultLauncher(),
             env = "./pyenv",
             packages = emptyList(),
             autoInstall = true,

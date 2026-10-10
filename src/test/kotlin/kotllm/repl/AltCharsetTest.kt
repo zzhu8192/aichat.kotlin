@@ -76,6 +76,7 @@ class AltCharsetTest {
         JLineTuning.init()
         JLineTuning.DisableAlternateCharset shouldBe "org.jline.utils.disableAlternateCharset"
         JLineTuning.alternateCharsetDisabled shouldBe true
+        JLineTuning.jlineLoggingSilenced shouldBe true
     }
 
     @Test fun `init is idempotent and does not stamp on an explicit setting`() {

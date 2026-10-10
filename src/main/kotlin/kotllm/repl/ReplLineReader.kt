@@ -25,6 +25,9 @@ class ReplLineReader(
     init {
         setVariable(LineReader.HISTORY_FILE, Paths.historyFile())
         setVariable(LineReader.SECONDARY_PROMPT_PATTERN, "")
+        // Conversational prompts use '!' and '?' in normal prose and code;
+        // csh-style history expansion (!1, !?, etc.) must not mangle input or fail.
+        setOpt(LineReader.Option.DISABLE_EVENT_EXPANSION)
         setCompleter(
             ReplCompleter(
                 { runner.config.listModels },
