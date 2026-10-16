@@ -10,7 +10,7 @@
          report or a running binary can be tied to one build. BuildInfo.full
          appends the build timestamp for the several builds that share one
          -SNAPSHOT. -->
-    <version>1.36.4-SNAPSHOT</version>
+    <version>1.36.5-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <properties>
@@ -31,7 +31,7 @@
         <kotlinx-serialization.version>1.11.0</kotlinx-serialization.version>
         <groovy.version>5.1.3</groovy.version>
 
-        <jline.version>4.4.5</jline.version>
+        <jline.version>3.29.0</jline.version>
         <snakeyaml.version>2.7</snakeyaml.version>
         <junit.version>6.1.3</junit.version>
         <kotest.version>6.2.5</kotest.version>
@@ -80,26 +80,20 @@
             <version>${groovy.version}</version>
         </dependency>
 
-        <!-- Deliberately the JLine *uber* jar, with the jdk11 classifier that
-             replaced 3.x's jdk8. Declaring the modular jline-terminal /
-             jline-reader artifacts instead duplicates every org.jline class in
-             the shaded jar at a skewed version; the uber jar is one coordinate
-             and one copy. The classified build is a plain jar where the
-             unclassified one is multi-release, and shading a multi-release jar
-             means reasoning about which META-INF/versions entries survive the
-             module-info filter below.
-
-             Two behaviour changes had to be absorbed to get to 4.x, both of
-             which compiled silently: `ParsedLine` no longer reports a phantom
-             empty word when the cursor sits after a trailing space, and the
-             eleven light box-drawing characters are now rewritten to ASCII
-             unconditionally rather than left alone. See `Completer.complete`
-             and `Glyphs.dividerChar`. -->
+        <!-- Deliberately the JLine 3 *uber* jar (`3.29.0` with `jdk8` classifier),
+             matching the Scala build and AGENTS.md. JLine 4.x changed
+             `AttributedCharSequence.substituteChar` so that disabling the
+             alternate charset (`org.jline.utils.disableAlternateCharset=true`)
+             unconditionally rewrites `U+2500` (`─`) to ASCII `-`, and substituting
+             `U+2501` (`━`) instead fails over SSH in PuTTY / Windows classic
+             console fonts (`Courier New` / `Lucida Console` lack `U+2501`, so
+             PuTTY's `ucs_fallback` renders `━` as `-`). On JLine 3.29.0,
+             `disableAlternateCharset=true` emits `U+2500` (`─`) verbatim. -->
         <dependency>
             <groupId>org.jline</groupId>
             <artifactId>jline</artifactId>
             <version>${jline.version}</version>
-            <classifier>jdk11</classifier>
+            <classifier>jdk8</classifier>
         </dependency>
         <dependency>
             <groupId>org.yaml</groupId>

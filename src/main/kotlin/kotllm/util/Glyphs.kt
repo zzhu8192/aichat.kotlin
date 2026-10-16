@@ -88,7 +88,7 @@ object Glyphs {
      */
     val unicode: Boolean = forced() ?: run {
         try {
-            outputCharset().newEncoder().canEncode("█▁⠋→⋯━·↓")
+            outputCharset().newEncoder().canEncode("█▁⠋→⋯─·↓")
         } catch (e: Exception) {
             false
         }
@@ -117,15 +117,15 @@ object Glyphs {
      * object broke its own rule. The ASCII fallback is `-` rather than `_`,
      * which would read as a blank line, or `=`, which reads as a heading.
      *
-     * **U+2501 HEAVY, not U+2500 LIGHT, and that is load-bearing.** JLine
-     * rewrites exactly eleven light box-drawing characters and nothing else:
-     * into the terminal's alternate charset on 3.x, which rendered both rules
-     * as rows of `q` over ssh, and into ASCII `-` unconditionally on 4.x, which
-     * overrides the `unicode` decision made right here. The heavy glyph is in
-     * neither table, so the rule survives on any JLine, with or without
-     * `JLineTuning`, and tiles seamlessly just the same.
+     * **Must be `U+2500` (`─`, LIGHT HORIZONTAL), not `U+2501` (`━`, HEAVY).**
+     * Classic Windows SSH fonts (`Courier New` — PuTTY's default — and `Lucida
+     * Console`) include `U+2500` (`─`) and PuTTY draws it procedurally as a
+     * continuous solid line, whereas `U+2501` (`━`) is absent from those fonts
+     * and hits PuTTY's `ucs_fallback` table, which substitutes ASCII `'-'` and
+     * renders dashed rules (`-------------`) over SSH. JLine 3's `smacs`
+     * rewrite of `U+2500` into `q` is switched off by [JLineTuning].
      */
-    val dividerChar: String = if (unicode) "━" else "-"
+    val dividerChar: String = if (unicode) "─" else "-"
     val promptCaret: String = ">"
     val bullet: String = if (unicode) "·" else "|"
     val tokensIn: String = if (unicode) "↑" else "^"

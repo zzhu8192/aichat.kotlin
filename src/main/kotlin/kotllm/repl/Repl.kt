@@ -40,9 +40,6 @@ class Repl(
             .system(true)
             .dumb(true)
             .encoding(cs)
-            .stdinEncoding(cs)
-            .stdoutEncoding(cs)
-            .stderrEncoding(cs)
             .build()
     },
     private val chrome: Chrome = Chrome(terminal),

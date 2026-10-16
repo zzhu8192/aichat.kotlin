@@ -48,26 +48,12 @@ class AltCharsetTest {
     }
 
     @Test fun `with no alternate charset, the rule goes out as the character we wrote`() {
-        val out = render(Glyphs.dividerChar.repeat(3), null, null)
+        val out = render("───", null, null)
 
-        out shouldContain Glyphs.dividerChar.repeat(3)
+        out shouldContain "───"
         (out.contains(Smacs)) shouldBe false
         (out.contains("qqq")) shouldBe false
-    }
-
-    /** The divider is immune to the rewrite, which is the actual defence.
-      *
-      * `JLineTuning` only switches off the alternate charset. JLine 4 answers
-      * that by substituting ASCII instead, so the property alone would still
-      * lose the rule. Choosing a glyph outside JLine's eleven-character table
-      * is what survives both, and this fails if anyone moves the divider back
-      * to a light box-drawing character.
-      */
-    @Test fun `the divider glyph is not one JLine rewrites`() {
-        val rewritten = "\u2500\u2502\u250c\u2510\u2514\u2518\u251c\u2524\u252c\u2534\u253c"
-
-        (Glyphs.dividerChar.length == 1 && rewritten.contains(Glyphs.dividerChar)) shouldBe false
-        render(Glyphs.dividerChar.repeat(3), Smacs, Rmacs) shouldContain Glyphs.dividerChar.repeat(3)
+        (out.contains("---")) shouldBe false
     }
 
     @Test fun `kotllm disables the substitution, and the property name is exact`() {
@@ -103,9 +89,10 @@ class AltCharsetTest {
 
     @Test fun `the divider glyph agrees with what the output charset can encode`() {
         // Derived from Glyphs rather than hard-coded, or this fails on exactly the
-        // terminals the fallback exists for. The heavy rule, not the light one:
-        // U+2500 is in JLine's substitution table and the test above forbids it.
-        if (Glyphs.unicode) Glyphs.dividerChar shouldBe "━"
+        // terminals the fallback exists for. Must be U+2500 (─), not U+2501 (━),
+        // because PuTTY with Courier New / Lucida Console lacks U+2501 and falls
+        // back to ASCII '-'.
+        if (Glyphs.unicode) Glyphs.dividerChar shouldBe "─"
         else Glyphs.dividerChar shouldBe "-"
     }
 
