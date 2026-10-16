@@ -125,4 +125,28 @@ class AltCharsetTest {
         Prompt.isFramed("databricks-qwen35-122b-a10b> ") shouldBe false
         Prompt.isFramed("") shouldBe false
     }
+
+    @Test fun `POSIX US-ASCII locale fallback upgrades to UTF-8 while Windows and explicit 8-bit charsets stay as-is`() {
+        // SSH into Ubuntu Server/ARM with an ungenerated client LANG (or unset/C)
+        // makes glibc fall back to ANSI_X3.4-1968 (US-ASCII). On POSIX that is a
+        // locale fallback rather than a 7-bit terminal; on Windows or ISO-8859-1
+        // the declared single-byte charset is respected.
+        Glyphs.resolveCharset(java.nio.charset.StandardCharsets.US_ASCII, windows = false) shouldBe
+            java.nio.charset.StandardCharsets.UTF_8
+        Glyphs.resolveCharset(java.nio.charset.StandardCharsets.US_ASCII, windows = true) shouldBe
+            java.nio.charset.StandardCharsets.US_ASCII
+        Glyphs.resolveCharset(java.nio.charset.StandardCharsets.ISO_8859_1, windows = false) shouldBe
+            java.nio.charset.StandardCharsets.ISO_8859_1
+        Glyphs.resolveCharset(java.nio.charset.StandardCharsets.UTF_8, windows = false) shouldBe
+            java.nio.charset.StandardCharsets.UTF_8
+    }
+
+    @Test fun `JLineTuning pins JLine 4 stream encodings to UTF-8 when unicode is active`() {
+        JLineTuning.init()
+        if (Glyphs.unicode && Glyphs.outputCharset() == java.nio.charset.StandardCharsets.UTF_8) {
+            for (prop in JLineTuning.TerminalEncodingProps) {
+                System.getProperty(prop) shouldBe "UTF-8"
+            }
+        }
+    }
 }

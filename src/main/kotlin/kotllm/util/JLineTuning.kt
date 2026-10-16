@@ -32,9 +32,55 @@ object JLineTuning {
      */
     const val DisableAlternateCharset = "org.jline.utils.disableAlternateCharset"
 
+    internal val TerminalEncodingProps = listOf(
+        "org.jline.terminal.encoding",
+        "org.jline.terminal.stdin.encoding",
+        "org.jline.terminal.stdout.encoding",
+        "org.jline.terminal.stderr.encoding"
+    )
+
+    @Volatile
+    private var streamsUpgraded = false
+
     fun init() {
         if (System.getProperty(DisableAlternateCharset) == null) {
             System.setProperty(DisableAlternateCharset, "true")
+        }
+        // JLine 4's TerminalBuilder.computeStdoutEncoding() reads `stdout.encoding`
+        // before falling back to `computeEncoding()` (which in JLine 3 always
+        // returned UTF-8 on POSIX). When an SSH session's locale falls back to C
+        // (`ANSI_X3.4-1968` / `US-ASCII`), JLine 4 otherwise encodes `━` and `·`
+        // as `?`, and `System.out`/`System.err` do the same for transcript output.
+        if (Glyphs.unicode && Glyphs.outputCharset() == java.nio.charset.StandardCharsets.UTF_8) {
+            for (prop in TerminalEncodingProps) {
+                if (System.getProperty(prop) == null) {
+                    System.setProperty(prop, "UTF-8")
+                }
+            }
+            if (!streamsUpgraded && Glyphs.rawOutputCharset() == java.nio.charset.StandardCharsets.US_ASCII) {
+                synchronized(this) {
+                    if (!streamsUpgraded) {
+                        streamsUpgraded = true
+                        try {
+                            System.setOut(
+                                java.io.PrintStream(
+                                    System.out,
+                                    true,
+                                    java.nio.charset.StandardCharsets.UTF_8
+                                )
+                            )
+                            System.setErr(
+                                java.io.PrintStream(
+                                    System.err,
+                                    true,
+                                    java.nio.charset.StandardCharsets.UTF_8
+                                )
+                            )
+                        } catch (_: Throwable) {
+                        }
+                    }
+                }
+            }
         }
         // Silence JLine's JUL logger so internal diagnostics (like history expansion
         // or parser warnings) never leak onto the terminal stderr while typing or redrawing.

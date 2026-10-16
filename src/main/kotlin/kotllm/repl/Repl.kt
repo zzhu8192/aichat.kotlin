@@ -34,8 +34,17 @@ import kotllm.render.Turn
  */
 class Repl(
     private val runner: Runner,
-    private val terminal: Terminal =
-        TerminalBuilder.builder().system(true).dumb(true).build(),
+    private val terminal: Terminal = run {
+        val cs = kotllm.util.Glyphs.outputCharset()
+        TerminalBuilder.builder()
+            .system(true)
+            .dumb(true)
+            .encoding(cs)
+            .stdinEncoding(cs)
+            .stdoutEncoding(cs)
+            .stderrEncoding(cs)
+            .build()
+    },
     private val chrome: Chrome = Chrome(terminal),
     private val reader: LineReader = ReplLineReader(terminal, runner, chrome),
 ) {

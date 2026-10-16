@@ -10,7 +10,7 @@
          report or a running binary can be tied to one build. BuildInfo.full
          appends the build timestamp for the several builds that share one
          -SNAPSHOT. -->
-    <version>1.36.3-SNAPSHOT</version>
+    <version>1.36.4-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <properties>

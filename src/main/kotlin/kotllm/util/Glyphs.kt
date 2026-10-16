@@ -1,6 +1,7 @@
 package kotllm.util
 
 import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 
 /**
  * Box-drawing and spinner glyphs, with ASCII fallbacks.
@@ -14,10 +15,13 @@ import java.nio.charset.Charset
  */
 object Glyphs {
 
+    internal val isWindows: Boolean =
+        System.getProperty("os.name")?.lowercase()?.contains("win") == true
+
     /**
-     * The charset stdout will actually be encoded with.
+     * The raw charset reported by the JVM for stdout before POSIX C-locale recovery.
      */
-    private fun outputCharset(): Charset =
+    internal fun rawOutputCharset(): Charset =
         try {
             System.console()?.charset()
                 ?: System.getProperty("stdout.encoding")?.let { byName(it) }
@@ -26,6 +30,28 @@ object Glyphs {
         } catch (e: Exception) {
             Charset.defaultCharset()
         }
+
+    /**
+     * Effective output charset after upgrading glibc's `ANSI_X3.4-1968` (`US-ASCII`)
+     * fallback on POSIX to `UTF-8`.
+     *
+     * On Ubuntu Server / ARM over SSH, `sshd` accepts `LANG` / `LC_*` from the
+     * client (`AcceptEnv LANG LC_*`), while minimal/ARM images only ship `C.utf8`
+     * in `/usr/lib/locale`. When the forwarded locale (e.g. `en_US.UTF-8` or
+     * macOS `LC_CTYPE=UTF-8`) is not installed -- or `LANG` is unset / `C` --
+     * `setlocale(LC_ALL, "")` falls back to `"C"` and `nl_langinfo(CODESET)`
+     * reports `ANSI_X3.4-1968` (`US-ASCII`). Unlike Windows `cp1252`/`cp437` or
+     * an explicit 8-bit locale (`ISO-8859-1`), `US-ASCII` on POSIX is a locale
+     * fallback rather than a 7-bit hardware terminal.
+     */
+    internal fun resolveCharset(raw: Charset, windows: Boolean = isWindows): Charset =
+        if (!windows && raw == StandardCharsets.US_ASCII) StandardCharsets.UTF_8
+        else raw
+
+    /**
+     * The charset stdout will actually be encoded with.
+     */
+    fun outputCharset(): Charset = resolveCharset(rawOutputCharset())
 
     private fun byName(name: String): Charset? =
         try {
