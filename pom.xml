@@ -10,7 +10,7 @@
          report or a running binary can be tied to one build. BuildInfo.full
          appends the build timestamp for the several builds that share one
          -SNAPSHOT. -->
-    <version>1.36.5-SNAPSHOT</version>
+    <version>1.36.6-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <properties>
@@ -20,10 +20,10 @@
              it has to be bounced through a property of our own. -->
         <maven.build.timestamp.format>yyyy-MM-dd HH:mm:ss'Z'</maven.build.timestamp.format>
         <build.timestamp>${maven.build.timestamp}</build.timestamp>
-        <maven.compiler.release>17</maven.compiler.release>
+        <maven.compiler.release>21</maven.compiler.release>
 
-        <kotlin.version>2.4.20</kotlin.version>
-        <kotlin.compiler.jvmTarget>17</kotlin.compiler.jvmTarget>
+        <kotlin.version>2.4.21</kotlin.version>
+        <kotlin.compiler.jvmTarget>21</kotlin.compiler.jvmTarget>
         <!-- The port's whole premise is that this is faster than scalac.
              Measured, not assumed: the Scala tree is 31s main + 29s test. -->
         <kotlin.compiler.incremental>true</kotlin.compiler.incremental>
@@ -198,7 +198,7 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <jvmTarget>17</jvmTarget>
+                    <jvmTarget>21</jvmTarget>
                     <args>
                         <!-- The Scala build runs -deprecation -feature; this is
                              the closest equivalent worth having early, while the
