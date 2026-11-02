@@ -81,7 +81,7 @@ class UserToolsTest {
 
     @Test fun `the shipped config tool counts a real file`() {
         val root = dir()
-        put(root, "file_word_count.groovy", repoFile("config/tools/file_word_count.groovy"))
+        put(root, "file_word_count.groovy", repoFile("examples/tools/file_word_count.groovy"))
         val tool = load(root).second.single()
 
         val target = Files.write(root.resolve("sample.txt"), "one two two\nthree\n".toByteArray())
