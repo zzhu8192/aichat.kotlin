@@ -1,7 +1,26 @@
 # kotllm
 
-A command-line LLM REPL written in **Kotlin 2.1** on **Java 17**, built with Maven, targeting
-models served by ** Azure AI Foundry **, **Databricks AI Gateway** and any **OpenAI-compatible** (e.g. Ollama) endpoint .
+[![Kotlin 2.4.21](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF.svg?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![Java 21 LTS](https://img.shields.io/badge/Java-21%20LTS-ED8B00.svg?logo=openjdk&logoColor=white)](https://openjdk.org/)
+[![Maven 3.9+](https://img.shields.io/badge/Maven-3.9+-C71A36.svg?logo=apachemaven&logoColor=white)](https://maven.apache.org/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+An experimental command-line LLM REPL and agentic harness written in **Kotlin 2.4** on **Java 21 LTS**, built with Maven, targeting models served by **Azure AI Foundry**, **Databricks AI Gateway**, and any **OpenAI-compatible** endpoint (e.g., Ollama, vLLM, OpenAI).
+
+---
+
+> [!NOTE] Project Inspiration & Purpose
+> **Inspiration:** This project was heavily inspired by [aichat](https://github.com/sigoden/aichat) by Sigoden.
+>
+> **Exploratory Harness:** Built as an experimental testbed and personal playground to deeply explore and understand what goes into engineering an agentic LLM harness on the JVM — including in-process code interpretation, terminal REPL UX (JLine 3), hybrid RAG retrieval, multi-turn context compaction, prompt templating, and tool orchestration.
+
+> [!WARNING] Experimental & Security Notice
+> This project is an experimental prototype and learning sandbox:
+> - **In-process code execution:** Built-in tools (such as `groovy_eval`, `python_eval`, Java JShell evaluation, and shell tools) execute arbitrary code locally with the permissions of the running user. There is **no sandbox boundary** or container isolation.
+> - **Security posture:** Because this was built to experiment with agent capabilities, some parts may **not be secure or production-hardened**. Do **not** expose this harness as an unauthenticated service or feed untrusted prompts to autonomous execution loops.
+> - **Experimental surface:** Several features and abstractions were built to test different design ideas and may no longer be necessary or optimal. Treat this as an educational reference and sandbox.
+
+---
 
 What makes it different from a generic chat CLI:
 
@@ -44,7 +63,7 @@ This file is the user manual. For *why* any of it is built the way it is, see
 
 ## Build
 
-Requires JDK 17 and Maven 3.9+.
+Requires JDK 21 and Maven 3.9+.
 
 ```sh
 mvn clean package          # produces target/kotllm.jar (a fat jar)
@@ -61,13 +80,13 @@ kotllm itself is written in Kotlin; the language it runs *for the model* is Groo
 ```bat
 @echo off
 chcp 65001 >nul
-set KOTLLM_CONFIG_DIR=d:\path\to\config
-java -Dfile.encoding=UTF-8 -jar target\kotllm.jar %1 %2 %3 %4 %5 %6 %7 %8 %9
+set KOTLLM_CONFIG_DIR=C:\path\to\config
+java -Dfile.encoding=UTF-8 -jar target\kotllm.jar %*
 ```
 
-`chcp 65001` matters: Java 17 reports `Cp1252` for a Windows console, which cannot encode the
-box-drawing characters, so kotllm falls back to ASCII rules and bars. With UTF-8 you get the
-real glyphs. Everything works either way.
+`chcp 65001` matters: default Windows console codepages (such as `Cp1252`) cannot encode the
+Unicode box-drawing characters, which causes terminal output to fall back to ASCII rules and bars.
+With UTF-8 (`chcp 65001`), you get full glyphs and smooth box frames.
 
 ---
 
@@ -211,14 +230,14 @@ fib(20) = 6765
 an assignment without `def` lands in the session binding and is in scope next call, while a
 `def` is local to its own snippet and is gone. Everything bundled in the fat jar is importable
 with no build step: `groovy.json` (`JsonSlurper`, `JsonOutput`), kotlinx serialization,
-SnakeYAML, plus all of `groovy.*` and the Java 17 standard library.
+SnakeYAML, plus all of `groovy.*` and the Java standard library.
 
 Add more at runtime with no rebuild:
 
 ```yaml
 classpath_append:
-  - d:/libs/mylib.jar
-  - d:/libs/*          # trailing star expands to the jars in that directory
+  - /path/to/libs/mylib.jar
+  - /path/to/libs/*          # trailing star expands to the jars in that directory
 ```
 
 or `KOTLLM_CLASSPATH=...`.
@@ -257,7 +276,7 @@ Two behaviours worth knowing rather than discovering:
   **refused**, not silently auto-approved. The refusal reason goes back to the model, which
   adapts. Use `auto` for unattended runs.
 - `System.exit` / `sys.exit` in evaluated code is **defused**: the call site is rewritten before
-  compiling, so it prints a note and the session carries on. Java 17 deprecated `SecurityManager`
+  compiling, so it prints a note and the session carries on. Modern Java deprecated `SecurityManager`
   and the call cannot be trapped at runtime, so this used to be a flat refusal -- which worked,
   but had to be explained in the system prompt on every request to make sense. A rule the model
   cannot break beats one it has to be told about. A *mention* of the call, in a string or a
@@ -431,7 +450,7 @@ Point kotllm at a folder, and the model gains a `search` tool over it that answe
 a docs tree, a directory of notes - and the alternative is pasting half of it into the prompt.
 
 ```
-> /rag index D:\work\myproject
+> /rag index /path/to/myproject
   indexing 200/1184 files
   ...
 index 'myproject': 1184 added, 0 changed, 0 removed, 0 unchanged; 4732 chunks total
@@ -1296,7 +1315,7 @@ deliberately.
 ### Status
 
 This tree is a Kotlin port of an earlier Scala implementation. The port is complete and the
-suite is green: 1,227 tests across every package.
+suite is green: 1,240+ tests across every package.
 
 Live tests carry `@Tag("Live")`, which is what keeps them out of the default run.
 They read credentials from the config that `KOTLLM_CONFIG_DIR` points at, never from the
