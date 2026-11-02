@@ -18,3 +18,10 @@ history.txt
 # The Python session's virtual environment, created on first use of
 # python_eval. Tens to hundreds of MB, and entirely reproducible.
 pyenv/
+
+# OS and Editor artifacts
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
